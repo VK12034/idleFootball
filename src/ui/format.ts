@@ -17,3 +17,21 @@ export function fmtRate(n: number): string {
   if (n < 100) return n.toFixed(1);
   return fmt(n);
 }
+
+/**
+ * The bank readout. Below six figures it stays a full number with separators,
+ * because watching every digit move is the point; past that it shortens.
+ */
+export function fmtBank(n: number): string {
+  const v = Math.floor(n);
+  return v < 100_000 ? v.toLocaleString('en-US') : fmt(v);
+}
+
+/** "18s" / "2m 40s" — how long until you can afford something. */
+export function fmtEta(seconds: number): string {
+  const s = Math.max(0, Math.ceil(seconds));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rest = s % 60;
+  return rest === 0 ? `${m}m` : `${m}m ${rest}s`;
+}

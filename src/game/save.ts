@@ -1,10 +1,10 @@
 import { BALANCE } from '../config/balance';
 import { newGame, teamFromConfig } from './generate';
 import { tick } from './tick';
-import type { GameState } from './types';
+import type { GameState, Player } from './types';
 
 const KEY = 'gridiron.save';
-const VERSION = 2;
+const VERSION = 3;
 
 export function save(state: GameState): void {
   try {
@@ -15,11 +15,23 @@ export function save(state: GameState): void {
   }
 }
 
+/** What your teams did while the game was closed. Shown as a summary screen. */
+export interface OfflineReport {
+  ms: number;
+  yards: number;
+  drives: number;
+  touchdowns: number;
+  stops: number;
+  bigPlays: number;
+  /** The team that banked the most while you were away. */
+  bestTeam: string;
+  bestYards: number;
+}
+
 export interface LoadResult {
   state: GameState;
-  /** Milliseconds of catch-up that were applied, 0 for a fresh save. */
-  offlineMs: number;
-  offlineYards: number;
+  /** Null when nothing worth showing happened. */
+  offline: OfflineReport | null;
 }
 
 /**
@@ -37,13 +49,19 @@ export function load(): LoadResult {
   }
 
   if (!parsed || parsed.version !== VERSION || !Array.isArray(parsed.teams)) {
-    return { state: newGame(), offlineMs: 0, offlineYards: 0 };
+    return { state: newGame(), offline: null };
   }
 
   const fresh = newGame();
   const state: GameState = {
     ...fresh,
     ...parsed,
+    roster: Array.isArray(parsed.roster) ? (parsed.roster as Player[]) : [],
+    capital: Number(parsed.capital) || 0,
+    seasons: Number(parsed.seasons) || 0,
+    draftPulls: Number(parsed.draftPulls) || 0,
+    nextPlayerId: Number(parsed.nextPlayerId) || 1,
+    seasonYards: Number(parsed.seasonYards) || 0,
     // Rebuild teams through the config so renames and colour tweaks apply,
     // and so a hand-edited save cannot inject a broken team.
     teams: parsed.teams.flatMap((saved) => {
@@ -62,6 +80,8 @@ export function load(): LoadResult {
           touchdowns: Number(saved.touchdowns) || 0,
           yardsGained: Number(saved.yardsGained) || 0,
           bigPlays: Number(saved.bigPlays) || 0,
+          stops: Number(saved.stops) || 0,
+          closestStop: Number(saved.closestStop) || 0,
         },
       ];
     }),
@@ -71,11 +91,51 @@ export function load(): LoadResult {
 
   const away = Math.max(0, Date.now() - (Number(parsed.lastSavedAt) || Date.now()));
   const capped = Math.min(away, BALANCE.offline.maxHours * 60 * 60 * 1000);
+  if (capped <= 60_000) return { state, offline: null };
 
-  const before = state.bank;
-  if (capped > 1000) tick(state, capped);
+  // Snapshot, run the catch-up, then diff it into something worth reading.
+  const before = {
+    bank: state.bank,
+    teams: state.teams.map((t) => ({
+      yards: t.yardsGained,
+      tds: t.touchdowns,
+      stops: t.stops,
+      big: t.bigPlays,
+    })),
+  };
 
-  return { state, offlineMs: capped, offlineYards: state.bank - before };
+  tick(state, capped);
+
+  let best = { name: '', yards: -1 };
+  let touchdowns = 0;
+  let stops = 0;
+  let bigPlays = 0;
+  state.teams.forEach((t, i) => {
+    const was = before.teams[i];
+    if (!was) return;
+    const made = t.yardsGained - was.yards;
+    touchdowns += t.touchdowns - was.tds;
+    stops += t.stops - was.stops;
+    bigPlays += t.bigPlays - was.big;
+    if (made > best.yards) best = { name: t.name, yards: made };
+  });
+
+  const yards = state.bank - before.bank;
+  if (yards < 1) return { state, offline: null };
+
+  return {
+    state,
+    offline: {
+      ms: capped,
+      yards,
+      drives: touchdowns + stops,
+      touchdowns,
+      stops,
+      bigPlays,
+      bestTeam: best.name,
+      bestYards: Math.max(0, best.yards),
+    },
+  };
 }
 
 export function clearSave(): void {

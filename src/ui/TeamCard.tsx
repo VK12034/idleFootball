@@ -1,16 +1,17 @@
 import { BALANCE } from '../config/balance';
-import { getMods } from '../game/ratings';
+import { getMods, type League } from '../game/ratings';
 import type { Team, UpgradeId } from '../game/types';
+import BackBar from './BackBar';
 import FieldBar from './FieldBar';
 import { fmt, fmtRate } from './format';
-import { helmet, PixelArt } from './PixelArt';
+import Helmet from './Helmet';
 import UpgradePanel from './UpgradePanel';
 
 function Stat({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
-    <div className="px-inset px-1.5 py-1 text-center">
-      <div className="label !text-[6px]">{label}</div>
-      <div className="led mt-0.5 text-[10px]" style={{ color: color ?? '#fffdf2' }}>
+    <div className="border-[3px] border-ink bg-paper px-1 py-1 text-center">
+      <div className="text-[14px] leading-none text-mute">{label}</div>
+      <div className="pix mt-1 text-[9px]" style={{ color: color ?? '#1b2a6b' }}>
         {value}
       </div>
     </div>
@@ -21,100 +22,113 @@ export default function TeamCard({
   team,
   elapsed,
   bank,
+  league,
+  rate,
   onBuy,
+  onBack,
   highlight,
 }: {
   team: Team;
   elapsed: number;
   bank: number;
+  league: League;
+  rate: number;
   onBuy: (teamId: string, id: UpgradeId) => void;
+  onBack: () => void;
   highlight?: string | null;
 }) {
-  const mods = getMods(team);
+  const mods = getMods(team, league);
   const pb = BALANCE.playbooks[team.playbook];
 
   const scoring = elapsed - team.touchdownAt <= BALANCE.ui.flashDurationMs;
+  const stopped = elapsed - team.stoppedAt <= BALANCE.ui.flashDurationMs;
   const bigPlay = elapsed - team.bigPlayAt <= BALANCE.ui.flashDurationMs;
-  const banner = scoring ? 'TOUCHDOWN!' : bigPlay ? 'BIG PLAY!' : null;
-  const bannerColor = scoring ? '#ffd23f' : '#a3f542';
 
   return (
-    <div className="flex flex-col gap-2 sm:gap-3">
-      <div className={`px-panel no-select p-2 sm:p-3 ${scoring ? 'animate-bump' : ''}`}>
-        {/* ---- name plate ---- */}
-        <div
-          className="mb-2 flex items-center gap-2 border-[3px] border-ink px-2 py-1.5"
-          style={{ background: team.colors.primary }}
-        >
-          <PixelArt
-            sprite={helmet(team.colors.secondary, team.colors.primary)}
-            className="h-6 w-7 shrink-0"
+    <>
+      <BackBar title={team.name.toUpperCase()} onBack={onBack} />
+
+      <div
+        className={`no-select mb-4 border-[5px] border-ink bg-chalk p-2.5 ${
+          scoring ? 'animate-bump' : ''
+        }`}
+        style={{ boxShadow: '0 7px 0 0 #1b2a6b' }}
+      >
+        <div className="mb-2 flex items-center gap-2">
+          <Helmet
+            primary={team.colors.primary}
+            secondary={team.colors.secondary}
+            playbook={team.playbook}
+            size={48}
           />
-          <span className="min-w-0 flex-1">
-            <span className="led block truncate text-[9px] text-ink sm:text-[11px]">
-              {team.name.toUpperCase()}
+          <div className="min-w-0 flex-1 text-[17px] leading-tight text-mute">
+            {pb.label.toUpperCase()}
+            <br />
+            <span className="text-ink">
+              {fmtRate(mods.yardsPerSecond)} YD/SEC · {fmt(team.touchdowns)} TOUCHDOWNS
             </span>
-            <span className="block truncate text-[13px] leading-tight text-ink/70">
-              {pb.label}
-            </span>
-          </span>
-          <span className="led shrink-0 bg-ink px-1.5 py-1 text-[8px] text-amber">
-            {fmt(team.touchdowns)} TD
-          </span>
+          </div>
         </div>
 
-        {/* ---- the field ---- */}
-        <div className="relative">
-          <FieldBar team={team} scoring={scoring} highlight={highlight === 'field'} />
-          {banner && (
-            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
-              <span
-                className="led animate-burst border-[3px] border-ink bg-ink/80 px-2 py-1.5 text-[13px] drop-shadow-[4px_4px_0_rgba(0,0,0,0.6)] sm:px-3 sm:py-2 sm:text-[20px]"
-                style={{ color: bannerColor }}
-              >
-                {banner}
-              </span>
+        <FieldBar
+          team={team}
+          scoring={scoring}
+          stopped={stopped}
+          highlight={highlight === 'field'}
+        />
+
+        {/* One line, and it is about this drive: the near-miss has to be the
+            loudest thing on the screen when it happens. */}
+        {scoring ? (
+          <div className="pix animate-pop mt-2 text-center text-[12px] text-[#2f8f3a]">
+            TOUCHDOWN! +{fmt(mods.touchdownBonus)}
+          </div>
+        ) : stopped ? (
+          <div className="mt-2 border-[3px] border-[#a11d22] bg-[#ff5a5f] px-2 py-1.5 text-center">
+            <div className="pix text-[10px] leading-[1.4] text-white">{team.lastStopText}</div>
+            <div className="text-[16px] text-white">
+              YOU KEPT THE YARDS — GRIT STOPS THIS HAPPENING
             </div>
-          )}
-        </div>
+          </div>
+        ) : bigPlay ? (
+          <div className="pix animate-pop mt-2 text-center text-[12px] text-[#7a2fb8]">
+            BIG PLAY!
+          </div>
+        ) : (
+          team.lastStopText && (
+            <div className="mt-2 text-center text-[15px] text-[#a11d22]">
+              LAST DRIVE: {team.lastStopText}
+            </div>
+          )
+        )}
 
-        {/* ---- readouts ---- */}
-        <div
-          className={`mt-2 grid grid-cols-3 gap-1.5 ${highlight === 'stats' ? 'tut-glow' : ''}`}
-        >
-          <Stat label="speed" value={`${fmtRate(mods.yardsPerSecond)}/s`} color="#45d9ff" />
-          <Stat label="td bonus" value={`+${fmt(mods.touchdownBonus)}`} color="#ff8a8f" />
-          <Stat label="yards made" value={fmt(team.yardsGained)} color="#ffd23f" />
-        </div>
-
-        {/* ---- highlights ---- */}
-        <div className="px-inset mt-2 px-2 py-1.5">
-          <div className="label mb-1 !text-[7px]">highlights</div>
-          <ul className="space-y-[3px]">
-            {team.log.length === 0 && (
-              <li className="text-[14px] text-chalk/30">Driving down the field...</li>
-            )}
-            {team.log.map((e, i) => (
-              <li
-                key={`${e.id}-${i}`}
-                className={`truncate text-[14px] leading-tight ${
-                  e.kind === 'touchdown' ? 'text-amber' : 'text-lime'
-                }`}
-                style={{ opacity: 1 - i * 0.11 }}
-              >
-                {e.text}
-              </li>
-            ))}
-          </ul>
+        <div className={`mt-2 grid grid-cols-3 gap-1.5 ${highlight === 'stats' ? 'tut-glow' : ''}`}>
+          <Stat label="TD BONUS" value={`+${fmt(mods.touchdownBonus)}`} color="#c26a00" />
+          <Stat
+            label="DRIVES SCORED"
+            value={`${(mods.driveSuccessRate * 100).toFixed(0)}%`}
+            color="#2f8f3a"
+          />
+          <Stat label="STOPPED" value={fmt(team.stops)} color="#a11d22" />
+          <Stat label="BIG PLAYS" value={fmt(team.bigPlays)} color="#7a2fb8" />
+          <Stat
+            label="CLOSEST STOP"
+            value={team.closestStop > 0 ? `${Math.round(100 - team.closestStop)} OUT` : '—'}
+            color="#a11d22"
+          />
+          <Stat label="YARDS MADE" value={fmt(team.yardsGained)} />
         </div>
       </div>
 
+      <div className="pix mb-2 text-[10px] text-shell">SPEND YARDS</div>
       <UpgradePanel
         team={team}
         bank={bank}
+        league={league}
+        rate={rate}
         onBuy={onBuy}
         highlight={highlight === 'upgrades'}
       />
-    </div>
+    </>
   );
 }

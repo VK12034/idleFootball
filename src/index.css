@@ -9,40 +9,34 @@
     height: 100%;
   }
 
+  * {
+    box-sizing: border-box;
+    image-rendering: pixelated;
+  }
+
   body {
-    @apply bg-ink text-chalk;
+    margin: 0;
     font-family: VT323, ui-monospace, monospace;
     font-size: 19px;
-    line-height: 1.25;
+    line-height: 1.2;
+    color: #1b2a6b;
     -webkit-font-smoothing: none;
-    image-rendering: pixelated;
-    /* phone hygiene: no sideways scroll, no iOS autoscaling, no tap highlight */
     overflow-x: hidden;
     overscroll-behavior-y: none;
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
-    background-image:
-      radial-gradient(circle at 50% -15%, #7d6dff 0%, #4b3ec8 35%, #31258f 70%, #241a70 100%),
-      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.05) 0 2px, transparent 2px 4px);
+    /* The arcade backdrop the phone sits on. */
+    background: repeating-linear-gradient(45deg, #2b1e66 0 12px, #32237a 12px 24px);
     background-attachment: fixed;
   }
 
-  /* keep the chunky look: nothing gets soft edges */
-  * {
-    image-rendering: pixelated;
-  }
-
   button {
-    /* Inherit the readable body font. Only .px-btn / .led opt into the wide
-       pixel display face — applying it to every button made body copy inside
-       buttons three times too wide and forced truncation. */
     font: inherit;
     color: inherit;
-    /* kill the 300ms tap delay and double-tap zoom on buttons */
+    cursor: pointer;
     touch-action: manipulation;
   }
 
-  /* Tapping fast on upgrade buttons should never start a text selection. */
   .no-select {
     -webkit-user-select: none;
     user-select: none;
@@ -50,81 +44,199 @@
 }
 
 @layer components {
-  /* A chunky panel with a hard drop shadow, no rounded corners. */
-  .px-panel {
-    @apply relative border-[3px] border-ink bg-night;
-    box-shadow:
-      0 5px 0 0 #120a38,
-      inset 3px 3px 0 0 rgba(255, 255, 255, 0.22),
-      inset -3px -3px 0 0 rgba(0, 0, 0, 0.28);
+  /* ---------- the phone ---------- */
+
+  /* On a phone the game fills the glass. On a desktop it sits in a chunky
+     plastic shell so the fixed 390x812 layout still looks deliberate. */
+  .phone {
+    @apply relative mx-auto w-full;
+    max-width: 406px;
   }
 
-  .px-inset {
-    @apply border-[3px] border-ink bg-deep;
-    box-shadow: inset 3px 3px 0 0 rgba(0, 0, 0, 0.32);
+  .screen {
+    @apply relative w-full overflow-hidden;
+    height: 100dvh;
+    background: linear-gradient(#43c8ff 0%, #7fe0ff 46%, #bdf3ff 72%, #e9fbff 100%);
   }
 
-  .px-btn {
-    @apply relative border-[3px] border-ink bg-dusk px-3 py-2 text-[10px] uppercase tracking-wider text-chalk;
+  @media (min-width: 440px) and (min-height: 700px) {
+    .phone {
+      @apply border-[8px] border-shell bg-shell;
+      box-shadow: 12px 12px 0 0 rgba(0, 0, 0, 0.35);
+      margin-top: 24px;
+      margin-bottom: 40px;
+    }
+    .screen {
+      height: min(812px, calc(100dvh - 96px));
+    }
+  }
+
+  /* The scrolling middle of the screen: no visible scrollbar, ever. */
+  .screen-body {
+    @apply min-h-0 flex-1 overflow-y-auto overflow-x-hidden;
+    scrollbar-width: none;
+  }
+  .screen-body::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  /* ---------- pixel furniture ---------- */
+
+  .pix {
     font-family: 'Press Start 2P', ui-monospace, monospace;
-    /* comfortable thumb target on a phone */
+  }
+
+  /* A cream card with a hard offset shadow. Depresses when tapped. */
+  .card {
+    @apply block w-full border-[5px] border-ink bg-chalk p-2.5 text-left;
+    box-shadow: 0 6px 0 0 #1b2a6b;
+  }
+
+  .btn {
+    @apply border-[5px] border-ink;
+    box-shadow: 0 6px 0 0 #1b2a6b;
     min-height: 44px;
-    box-shadow:
-      0 4px 0 0 #120a38,
-      inset 2px 2px 0 0 rgba(255, 255, 255, 0.28);
-    transition: none;
-  }
-  .px-btn:hover {
-    @apply bg-[#7a70ff];
-  }
-  .px-btn:active {
-    transform: translateY(4px);
-    box-shadow: inset 2px 2px 0 0 rgba(0, 0, 0, 0.3);
   }
 
-  .px-btn-amber {
-    @apply bg-amber text-ink;
-  }
-  .px-btn-amber:hover {
-    @apply bg-[#ffd268];
-  }
-
-  /* LED scoreboard digits */
-  .led {
-    font-family: 'Press Start 2P', ui-monospace, monospace;
-    letter-spacing: 0.04em;
+  .card:not(:disabled):active,
+  .btn:not(:disabled):active {
+    transform: translateY(3px);
+    box-shadow: 0 3px 0 0 #1b2a6b;
   }
 
-  .label {
-    font-family: 'Press Start 2P', ui-monospace, monospace;
-    @apply text-[8px] uppercase tracking-[0.16em] text-[#bcb2ff];
+  .card:disabled,
+  .btn:disabled {
+    cursor: not-allowed;
   }
 
-  /* the tutorial spotlight: pulse the ring only, never the content */
+  /* A locked / unaffordable face: same shape, drained of colour. */
+  .card-off {
+    @apply border-mute bg-lock;
+    box-shadow: 0 6px 0 0 #5566a8;
+  }
+
+  .small {
+    @apply text-[16px] leading-[1.1] text-mute;
+  }
+
+  /* The turf inside a drive bar, with its chalk yard lines. */
+  .field {
+    @apply relative overflow-hidden border-[3px] border-ink bg-grass;
+  }
+
+  /* The coach's spotlight ring. Pulses the outline only. */
   .tut-glow {
-    outline: 3px solid #ffc23c;
+    outline: 4px solid #ff5fa8;
     outline-offset: 3px;
-    animation: ringpulse 800ms steps(1, end) infinite;
+    animation: ringpulse 700ms steps(1, end) infinite;
   }
 
   @keyframes ringpulse {
     0%,
     49% {
-      outline-color: #ffc23c;
+      outline-color: #ff5fa8;
     }
     50%,
     100% {
-      outline-color: #6d4a0e;
+      outline-color: #ffe452;
     }
   }
+}
 
-  .scanlines::after {
-    content: '';
-    @apply pointer-events-none absolute inset-0;
-    background: repeating-linear-gradient(
-      0deg,
-      rgba(0, 0, 0, 0.16) 0 2px,
-      transparent 2px 4px
-    );
+/* Cloud drift is driven by inline `animation` shorthand (each cloud has its own
+   duration), so the keyframes have to exist outside Tailwind's animation map. */
+@keyframes drift {
+  from {
+    transform: translateX(-140px);
+  }
+  to {
+    transform: translateX(430px);
+  }
+}
+
+/* A yard number floating up off the field and fading out. */
+@keyframes floatUp {
+  0% {
+    transform: translate(-50%, 0) scale(0.8);
+    opacity: 0;
+  }
+  20% {
+    transform: translate(-50%, -6px) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -30px) scale(1);
+    opacity: 0;
+  }
+}
+
+/* The whole screen goes bright for an instant when someone scores. */
+@keyframes screenFlash {
+  0% {
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* The red flush when a drive is stopped. */
+@keyframes stopFlash {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.55;
+  }
+}
+
+/* The draft wheel, while it is still spinning. */
+@keyframes reelShake {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(-2px, 1px);
+  }
+  75% {
+    transform: translate(2px, -1px);
+  }
+}
+
+/* A drafted card landing. */
+@keyframes reveal {
+  0% {
+    transform: scale(0.5) rotate(-6deg);
+    opacity: 0;
+  }
+  55% {
+    transform: scale(1.08) rotate(2deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0);
+    opacity: 1;
+  }
+}
+
+@layer components {
+  .floater {
+    @apply pointer-events-none absolute z-20 whitespace-nowrap;
+    font-family: 'Press Start 2P', ui-monospace, monospace;
+    text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
+  }
+
+  /* A thin well with a coloured fill: progress toward the next purchase. */
+  .meter {
+    @apply relative block h-2 w-full overflow-hidden border-[3px] border-ink bg-[#cfd6ef];
+  }
+  .meter > span {
+    @apply block h-full;
   }
 }

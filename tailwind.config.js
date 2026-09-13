@@ -11,66 +11,64 @@ export default {
         term: ['VT323', 'ui-monospace', 'monospace'],
       },
       colors: {
-        // Outlines and shadows stay dark so the chunky pixel edges read.
-        ink: '#160e46',
-        // Panel faces and wells — saturated indigo, not grey.
-        deep: '#221a75',
-        night: '#4f46e5',
-        dusk: '#6b62ff',
-        turf: '#4fd167',
-        turfdark: '#35ac4c',
+        // Outlines. Every panel edge in the game is one of these two.
+        ink: '#1b2a6b',
+        night: '#0e1440',
+        // The phone shell and helmet shells.
+        shell: '#12184a',
+        // Paper faces.
         chalk: '#fffdf2',
-        amber: '#ffd23f',
-        flame: '#ff5a5f',
-        sky: '#45d9ff',
-        lime: '#a3f542',
-        grape: '#c56bff',
+        paper: '#e7ebf8',
+        lock: '#dfe4f5',
+        // Muted body copy on paper.
+        mute: '#5566a8',
+        mutedeep: '#41508c',
+        // Chrome.
+        steel: '#3a4fa8',
+        // Accents.
+        amber: '#ffe452',
+        gold: '#ffd23f',
+        lime: '#8cf25b',
+        sky: '#3fd8ff',
+        flame: '#ff7a3d',
+        grape: '#a24cf0',
+        pink: '#ff5fa8',
+        // Turf.
+        turf: '#6adf62',
+        turfdark: '#3fae4b',
+        grass: '#2e7d3a',
       },
       keyframes: {
-        shake: {
-          '0%,100%': { transform: 'translate(0,0)' },
-          '20%': { transform: 'translate(-3px,2px)' },
-          '40%': { transform: 'translate(3px,-2px)' },
-          '60%': { transform: 'translate(-2px,-2px)' },
-          '80%': { transform: 'translate(2px,2px)' },
-        },
-        bump: {
-          '0%': { transform: 'translateY(0) scale(1)' },
-          '35%': { transform: 'translateY(-5px) scale(1.04)' },
-          '100%': { transform: 'translateY(0) scale(1)' },
-        },
-        popIn: {
-          '0%': { transform: 'translateY(5px)', opacity: '0' },
-          '100%': { transform: 'translateY(0)', opacity: '1' },
-        },
-        burst: {
-          '0%': { transform: 'scale(0.4) rotate(-8deg)', opacity: '0' },
-          '18%': { transform: 'scale(1.25) rotate(4deg)', opacity: '1' },
-          '32%': { transform: 'scale(1) rotate(0deg)', opacity: '1' },
-          '82%': { transform: 'scale(1) rotate(0deg)', opacity: '1' },
-          '100%': { transform: 'scale(1.15)', opacity: '0' },
-        },
-        blink: {
-          '0%,49%': { opacity: '1' },
-          '50%,100%': { opacity: '0.25' },
+        drift: {
+          from: { transform: 'translateX(-140px)' },
+          to: { transform: 'translateX(430px)' },
         },
         bob: {
           '0%,100%': { transform: 'translateY(0)' },
           '50%': { transform: 'translateY(-3px)' },
         },
-        stripe: {
-          '0%': { backgroundPosition: '0 0' },
-          '100%': { backgroundPosition: '32px 0' },
+        pop: {
+          '0%': { transform: 'scale(.7)', opacity: '0' },
+          '25%': { transform: 'scale(1.05)', opacity: '1' },
+          '80%': { opacity: '1' },
+          '100%': { opacity: '0' },
+        },
+        bump: {
+          '0%': { transform: 'translateY(0) scale(1)' },
+          '35%': { transform: 'translateY(-5px) scale(1.02)' },
+          '100%': { transform: 'translateY(0) scale(1)' },
+        },
+        blink: {
+          '0%,49%': { opacity: '1' },
+          '50%,100%': { opacity: '0.25' },
         },
       },
       animation: {
-        shake: 'shake 320ms steps(2,end) 2',
+        bob: 'bob 3.2s steps(4,end) infinite',
+        bobslow: 'bob 2.4s steps(3,end) infinite',
+        pop: 'pop .9s steps(6,end)',
         bump: 'bump 320ms ease-out',
-        popIn: 'popIn 120ms steps(3,end)',
-        burst: 'burst 1100ms steps(8,end) forwards',
         blink: 'blink 900ms steps(1,end) infinite',
-        bob: 'bob 1.4s steps(2,end) infinite',
-        stripe: 'stripe 600ms linear infinite',
       },
     },
   },

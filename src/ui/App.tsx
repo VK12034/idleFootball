@@ -1,52 +1,35 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { buyUpgrade, unlockCost } from '../game/economy';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BALANCE } from '../config/balance';
+import { buyUpgrade, nextGoal, unlockCost, type Goal } from '../game/economy';
+import { draftPlayer } from '../game/draft';
 import { teamFromConfig } from '../game/generate';
-import { load, save } from '../game/save';
+import { pendingCapital, startNewSeason } from '../game/prestige';
+import { getMods, leagueOf } from '../game/ratings';
+import { load, save, type OfflineReport as Report } from '../game/save';
 import { tick, yardsPerMinute } from '../game/tick';
-import type { GameState, UpgradeId } from '../game/types';
+import type { GameState, Player, UpgradeId } from '../game/types';
+import BottomNav, { type TabId } from './BottomNav';
+import DraftPanel from './DraftPanel';
 import Header from './Header';
 import MainMenu from './MainMenu';
-import { fmt } from './format';
-import { CROWD, FOOTBALL, PixelArt } from './PixelArt';
+import OfflineReport from './OfflineReport';
+import SeasonPanel from './SeasonPanel';
+import Sky from './Sky';
 import TeamCard from './TeamCard';
 import TeamsPanel from './TeamsPanel';
 import Tutorial, { TUTORIAL } from './Tutorial';
-import UpgradePanel from './UpgradePanel';
 
-/** How often the rAF loop is allowed to push a render. */
-const RENDER_INTERVAL_MS = 100;
+/**
+ * How often the rAF loop is allowed to push a render. Fast enough that the
+ * bank counter reads as a counter rather than a slideshow.
+ */
+const RENDER_INTERVAL_MS = 60;
 /** Clamp a single frame's dt so a background tab does not fire a huge jump. */
 const MAX_FRAME_DT_MS = 250;
 
 const TUTORIAL_SEEN_KEY = 'gridiron.tutorialSeen';
 
-type View =
-  | { name: 'home' }
-  | { name: 'teams' }
-  | { name: 'upgrades' }
-  | { name: 'team'; id: string };
-
-function fmtDuration(ms: number): string {
-  const mins = Math.floor(ms / 60_000);
-  if (mins < 1) return 'a moment';
-  if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'}`;
-  const hours = Math.floor(mins / 60);
-  const rest = mins % 60;
-  const h = `${hours} hour${hours === 1 ? '' : 's'}`;
-  return rest === 0 ? h : `${h} ${rest} min`;
-}
-
-/** Decorative pixel crowd so the page reads like a stadium. */
-function Stands() {
-  return (
-    <div className="mt-1 select-none" aria-hidden="true">
-      <div className="scanlines relative overflow-hidden border-[3px] border-ink bg-deep">
-        <PixelArt sprite={CROWD} stretch className="block h-12 w-full opacity-80 sm:h-16" />
-      </div>
-      <div className="h-3 border-x-[3px] border-b-[3px] border-ink bg-dusk" />
-    </div>
-  );
-}
+type View = TabId | 'draft' | 'season';
 
 export default function App() {
   // Load once, fast-forwarding whatever time passed while the game was closed.
@@ -55,17 +38,17 @@ export default function App() {
 
   // The authoritative state lives in a ref and is mutated by the loop.
   const stateRef = useRef<GameState>(loadedRef.current.state);
-  const [welcomeBack, setWelcomeBack] = useState(
-    loadedRef.current.offlineYards >= 1 ? loadedRef.current : null,
-  );
-  // Bumping this is the only thing that re-renders, at ~10Hz.
+  const [report, setReport] = useState<Report | null>(loadedRef.current.offline);
+  // Bumping this is the only thing that re-renders, at ~16Hz.
   const [, setFrame] = useState(0);
   const forceRender = useCallback(() => setFrame((f) => f + 1), []);
 
-  const [view, setView] = useState<View>({ name: 'home' });
+  const [view, setView] = useState<View>('home');
+  /** Which team the FIELD tab shows. Follows whatever you last opened. */
+  const [selected, setSelected] = useState(() => stateRef.current.teams[0]?.id ?? '');
 
-  const [tutHeight, setTutHeight] = useState(0);
-  const handleTutHeight = useCallback((px: number) => setTutHeight(px), []);
+  // The scrolling body is its own element, so screen changes have to reset it.
+  const bodyRef = useRef<HTMLDivElement | null>(null);
 
   const [tutStep, setTutStep] = useState<number | null>(() => {
     try {
@@ -118,18 +101,27 @@ export default function App() {
   const step = tutStep === null ? null : TUTORIAL[tutStep];
   const highlight = step?.target ?? null;
 
+  // Roster size and capital are the only inputs, and both change rarely.
+  const league = useMemo(() => leagueOf(state), [state.roster.length, state.capital]);
+
+  // Yards per second across the whole league, behind every "how long until
+  // I can afford this" readout on screen.
+  const rate = state.teams.reduce((a, t) => a + getMods(t, league).effectiveYardsPerSecond, 0);
+  const goal = nextGoal(state, rate);
+
+  // The whole screen goes bright when anyone scores.
+  const lastScore = state.teams.reduce((a, t) => Math.max(a, t.touchdownAt), -1e9);
+  const flashing = state.elapsed - lastScore <= BALANCE.ui.screenFlashMs;
+
   // The coach points at parts of the screen, so put the player where he is looking.
   useEffect(() => {
-    if (!step) return;
-    if (step.screen === 'team') {
-      const first = stateRef.current.teams[0];
-      if (first) {
-        setView((v) => (v.name === 'team' && v.id === first.id ? v : { name: 'team', id: first.id }));
-      }
-    } else if (step.screen === 'home') {
-      setView((v) => (v.name === 'home' ? v : { name: 'home' }));
-    }
+    if (!step?.screen) return;
+    setView(step.screen);
   }, [step]);
+
+  useEffect(() => {
+    bodyRef.current?.scrollTo({ top: 0 });
+  }, [view, selected]);
 
   const closeTutorial = () => {
     setTutStep(null);
@@ -148,115 +140,142 @@ export default function App() {
     [forceRender],
   );
 
-  const handleBuyTeam = useCallback(
-    (id: string) => {
-      const s = stateRef.current;
-      if (s.teams.some((t) => t.id === id)) return;
-      const cost = unlockCost(s.teams.length);
-      if (s.bank < cost) return;
-      s.bank -= cost;
-      s.teams.push(teamFromConfig(id));
-      forceRender();
-    },
-    [forceRender],
-  );
+  const handleBuyTeam = useCallback((id: string) => {
+    const s = stateRef.current;
+    if (s.teams.some((t) => t.id === id)) return;
+    const cost = unlockCost(s.teams.length);
+    if (s.bank < cost) return;
+    s.bank -= cost;
+    s.teams.push(teamFromConfig(id));
+    // Drop straight onto the new team's field, the way buying one should feel.
+    setSelected(id);
+    setView('team');
+  }, []);
 
-  const openTeam = (id: string) => setView({ name: 'team', id });
+  const handleDraft = useCallback((): Player | null => {
+    const player = draftPlayer(stateRef.current);
+    forceRender();
+    return player;
+  }, [forceRender]);
 
-  const activeTeam =
-    view.name === 'team' ? state.teams.find((t) => t.id === view.id) ?? null : null;
+  const handleNewSeason = useCallback(() => {
+    const s = stateRef.current;
+    if (!startNewSeason(s)) return;
+    setSelected(s.teams[0]?.id ?? '');
+    setView('home');
+  }, []);
 
-  const title =
-    view.name === 'home'
-      ? null
-      : view.name === 'teams'
-        ? 'TEAMS'
-        : view.name === 'upgrades'
-          ? 'UPGRADES'
-          : activeTeam?.name ?? 'TEAM';
+  const openTeam = (id: string) => {
+    setSelected(id);
+    setView('team');
+  };
 
-  const goBack = () => setView(view.name === 'team' ? { name: 'teams' } : { name: 'home' });
+  const activeTeam = state.teams.find((t) => t.id === selected) ?? state.teams[0] ?? null;
+
+  /** Tapping the next-goal card takes you to wherever you would buy it. */
+  const goToGoal = (g: Goal) => {
+    if (g.kind === 'team') setView('teams');
+    else if (g.kind === 'draft') setView('draft');
+    else if (g.teamId) openTeam(g.teamId);
+  };
+
+  // The draft and season screens are reached from home, so HOME stays lit.
+  const tab: TabId = view === 'draft' || view === 'season' ? 'home' : view;
 
   return (
-    <div className="min-h-full">
-      <Header
-        bank={state.bank}
-        yardsPerMin={yardsPerMinute(state)}
-        onHelp={() => setTutStep(0)}
-        onBack={view.name === 'home' ? undefined : goBack}
-        title={title}
-        highlight={highlight}
-      />
+    <div className="phone">
+      <div className="screen">
+        {view === 'home' && <Sky />}
 
-      <main
-        className="mx-auto flex max-w-3xl flex-col gap-2 px-2 py-2 sm:gap-3 sm:px-3 sm:py-3"
-        style={{ paddingBottom: tutStep === null ? 24 : tutHeight + 16 }}
-      >
-        {welcomeBack && (
-          <button
-            className="px-panel flex items-center gap-3 p-3 text-left"
-            onClick={() => setWelcomeBack(null)}
-          >
-            <PixelArt sprite={FOOTBALL} className="h-7 w-10 shrink-0" />
-            <span className="min-w-0 flex-1">
-              <span className="led block text-[10px] text-amber">WELCOME BACK!</span>
-              <span className="block text-[14px] leading-tight text-chalk/70">
-                Your teams ran for {fmtDuration(welcomeBack.offlineMs)} and made{' '}
-                <span className="text-amber">{fmt(welcomeBack.offlineYards)} yards</span>.
-              </span>
-            </span>
-            <span className="led shrink-0 text-[9px] text-chalk/40">OK</span>
-          </button>
-        )}
-
-        {view.name === 'home' && (
-          <MainMenu
-            state={state}
-            onOpenTeams={() => setView({ name: 'teams' })}
-            onOpenUpgrades={() => setView({ name: 'upgrades' })}
-            onOpenTeam={openTeam}
+        <div className="relative z-10 flex h-full flex-col">
+          <Header
+            bank={state.bank}
+            yardsPerMin={yardsPerMinute(state)}
+            owned={state.teams.length}
+            capital={state.capital}
+            pending={pendingCapital(state)}
+            scoring={flashing}
+            onHelp={() => setTutStep(0)}
+            onTeams={() => setView('teams')}
+            onSeason={() => setView('season')}
             highlight={highlight}
+          />
+
+          <div ref={bodyRef} className="screen-body px-3 pb-4 pt-3.5">
+            {view === 'home' && (
+              <MainMenu
+                state={state}
+                league={league}
+                elapsed={state.elapsed}
+                goal={goal}
+                rate={rate}
+                onOpenTeams={() => setView('teams')}
+                onOpenUpgrades={() => setView('team')}
+                onOpenTeam={openTeam}
+                onOpenDraft={() => setView('draft')}
+                onOpenSeason={() => setView('season')}
+                onGoal={goToGoal}
+                highlight={highlight}
+              />
+            )}
+
+            {view === 'teams' && (
+              <TeamsPanel
+                state={state}
+                onOpenTeam={openTeam}
+                onBuyTeam={handleBuyTeam}
+                onBack={() => setView('home')}
+              />
+            )}
+
+            {view === 'team' &&
+              (activeTeam ? (
+                <TeamCard
+                  team={activeTeam}
+                  elapsed={state.elapsed}
+                  bank={state.bank}
+                  league={league}
+                  rate={rate}
+                  onBuy={handleBuy}
+                  onBack={() => setView('home')}
+                  highlight={highlight}
+                />
+              ) : (
+                <div className="card">You do not own that team yet.</div>
+              ))}
+
+            {view === 'draft' && (
+              <DraftPanel state={state} onDraft={handleDraft} onBack={() => setView('home')} />
+            )}
+
+            {view === 'season' && (
+              <SeasonPanel
+                state={state}
+                onNewSeason={handleNewSeason}
+                onBack={() => setView('home')}
+              />
+            )}
+
+            {tutStep !== null && (
+              <Tutorial step={tutStep} onStep={setTutStep} onClose={closeTutorial} />
+            )}
+          </div>
+
+          <BottomNav active={tab} onSelect={setView} highlight={highlight} />
+        </div>
+
+        {/* the touchdown flash, over everything */}
+        {flashing && (
+          <div
+            key={lastScore}
+            className="pointer-events-none absolute inset-0 z-30 bg-[#fff9c4]"
+            style={{ animation: `screenFlash ${BALANCE.ui.screenFlashMs}ms steps(5,end) forwards` }}
+            aria-hidden="true"
           />
         )}
 
-        {view.name === 'teams' && (
-          <TeamsPanel state={state} onOpenTeam={openTeam} onBuyTeam={handleBuyTeam} />
-        )}
-
-        {view.name === 'upgrades' &&
-          state.teams.map((t) => (
-            <div key={t.id} className="flex flex-col gap-1">
-              <div className="led px-1 text-[10px] text-chalk">{t.name.toUpperCase()}</div>
-              <UpgradePanel team={t} bank={state.bank} onBuy={handleBuy} />
-            </div>
-          ))}
-
-        {view.name === 'team' &&
-          (activeTeam ? (
-            <TeamCard
-              team={activeTeam}
-              elapsed={state.elapsed}
-              bank={state.bank}
-              onBuy={handleBuy}
-              highlight={highlight}
-            />
-          ) : (
-            <div className="px-panel p-4 text-[16px] text-chalk/70">
-              You do not own that team yet.
-            </div>
-          ))}
-
-        <Stands />
-      </main>
-
-      {tutStep !== null && (
-        <Tutorial
-          step={tutStep}
-          onStep={setTutStep}
-          onClose={closeTutorial}
-          onHeight={handleTutHeight}
-        />
-      )}
+        {report && <OfflineReport report={report} onCollect={() => setReport(null)} />}
+      </div>
     </div>
   );
 }

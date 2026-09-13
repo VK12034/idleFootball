@@ -1,7 +1,9 @@
 import { BALANCE } from '../config/balance';
 import { advanceTeam, type Rng } from './drive';
-import { getMods } from './ratings';
+import { getMods, leagueOf } from './ratings';
 import type { GameState } from './types';
+
+let nextFloaterId = 1;
 
 /**
  * Advances the whole game by dt milliseconds. Free of React so offline
@@ -13,10 +15,11 @@ export function tick(state: GameState, dtMs: number, rng: Rng = Math.random): Ga
 
   const dtSeconds = Math.min(dtMs / 1000, BALANCE.tick.maxSecondsPerStep);
   const now = state.elapsed + dtMs;
+  const league = leagueOf(state);
   let earned = 0;
 
   for (const team of state.teams) {
-    const mods = getMods(team);
+    const mods = getMods(team, league);
     const out = advanceTeam(team, mods, dtSeconds, rng);
     earned += out.yardsBanked;
 
@@ -24,15 +27,28 @@ export function tick(state: GameState, dtMs: number, rng: Rng = Math.random): Ga
     // decide how long to keep the celebration on screen.
     if (team.touchdownAt === -1) team.touchdownAt = now;
     if (team.bigPlayAt === -1) team.bigPlayAt = now;
+    if (team.stoppedAt === -1) team.stoppedAt = now;
 
     for (const e of out.events) {
-      team.log.unshift({ id: team.touchdowns * 1000 + team.bigPlays, text: e.text, kind: e.kind });
+      // Every event floats up off the field; only the notable ones are logged.
+      team.floaters.push({ id: nextFloaterId++, text: e.text, kind: e.kind, at: now, pos: e.pos });
+      if (e.kind !== 'play') {
+        team.log.unshift({ id: nextFloaterId, text: e.text, kind: e.kind });
+      }
+    }
+
+    if (team.floaters.length > 0) {
+      team.floaters = team.floaters.filter((f) => now - f.at < BALANCE.ui.floaterMs);
+      if (team.floaters.length > BALANCE.ui.maxFloaters) {
+        team.floaters = team.floaters.slice(-BALANCE.ui.maxFloaters);
+      }
     }
     if (team.log.length > BALANCE.ui.logLength) team.log.length = BALANCE.ui.logLength;
   }
 
   state.bank += earned;
   state.lifetimeYards += earned;
+  state.seasonYards += earned;
   state.elapsed = now;
 
   const decay = Math.pow(0.5, dtMs / BALANCE.rate.halfLifeMs);
