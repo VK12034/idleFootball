@@ -1,134 +1,131 @@
 // Every tunable number lives here. No logic, no imports.
-// Tune this file to change how the game feels; never touch mechanics for balance.
+//
+// Design rules for this game:
+//   - Teams ONLY move forward. Nothing ever takes yards away.
+//   - Yards are both the progress bar and the currency.
+//   - 100 yards = touchdown, which pays a bonus and starts a new drive.
 
 export const BALANCE = {
-  drive: {
-    startYardLine: 25, // own 25 after any score or turnover
-    firstDownDistance: 10,
-    goalLine: 100,
+  field: {
+    /** Yards from your own goal line to the end zone. */
+    length: 100,
   },
 
-  play: {
-    // Base play interval at oline rating 1. Target: one play every 4 seconds.
-    basePlayIntervalMs: 4000,
-
-    // Raw yardage bands and failure rates for a COMPETENT offense.
-    // A low-rated team does not get worse yards, it gets far more failures
-    // (see ratingPenalty below). That is what makes rating 1 stall constantly.
-    run: { floor: 3, ceiling: 5, fumbleChance: 0.02 },
-    shortPass: { floor: 6, ceiling: 9, incompletionChance: 0.15, intChance: 0.02 },
-    deepPass: { floor: 20, ceiling: 40, incompletionChance: 0.45, intChance: 0.06 },
-
-    // A stuffed run (low-rated oline/rb) gains almost nothing.
-    stuffedRun: { floor: 0, ceiling: 1 },
-
-    explosiveBaseChance: 0.04,
-    explosiveMultiplier: 2.5,
+  team: {
+    /** A brand new team gains this many yards every second. */
+    yardsPerSecond: 5,
+    /** Extra yards banked for reaching the end zone. */
+    touchdownBonus: 25,
+    /** Odds per second that a team rips off a big play. */
+    bigPlayChance: 0.02,
+    /** Yards a big play jumps you forward. */
+    bigPlayYards: 20,
   },
 
-  // How rated skill converts into competence, 0..1.
-  // c = 1 - 1 / (1 + (rating - 1) * competenceScale)
-  // rating 1 -> 0.00   rating 10 -> 0.57   rating 35 -> 0.84   rating 99 -> 0.94
-  ratingPenalty: {
-    competenceScale: 0.15,
-    // Extra failure applied at competence 0, scaling to zero at competence 1.
-    runStuffAtZero: 0.86,
-    shortIncompletionAtZero: 0.5,
-    deepIncompletionAtZero: 0.4,
+  upgrades: {
+    speed: {
+      baseCost: 50,
+      costGrowth: 1.15,
+      /** Yards per second added per level. */
+      perLevel: 1,
+      maxLevel: 200,
+    },
+    power: {
+      baseCost: 75,
+      costGrowth: 1.15,
+      /** Touchdown bonus yards added per level. */
+      perLevel: 10,
+      maxLevel: 200,
+    },
+    bigPlay: {
+      baseCost: 120,
+      costGrowth: 1.18,
+      /** Added chance per second, and added yards, per level. */
+      chancePerLevel: 0.015,
+      yardsPerLevel: 5,
+      maxLevel: 100,
+    },
+    specialty: {
+      baseCost: 200,
+      costGrowth: 1.2,
+      maxLevel: 100,
+    },
   },
 
-  ratings: {
-    floorPerRb: 0.08, // running backs raise the floor of every gain
-    ceilingPerWr: 0.08, // receivers raise the ceiling of every gain
-    qbMultiplierPerPoint: 0.1, // MULTIPLIES the rb/wr product. Buying early is a trap.
-    tempoPerOl: 0.06, // oline speeds up the play clock
-    fumbleReductionPerOl: 0.05, // and hangs onto the ball
-    explosivePerWr: 0.05,
-    // Chance a 3rd/4th down play that came up short converts anyway.
-    // The base is what lifts a rating-1 team from a ~31% to a ~38% conversion rate.
-    conversionBase: 0.11,
-    conversionPerRb: 0.012,
-  },
-
-  fieldGoal: {
-    // distance = (100 - yardLine) + endZoneAndSnap
-    endZoneAndSnap: 17,
-    baseRange: 40, // at specialTeams 1 -> 42 yard range, so you must reach the opp 25
-    rangePerSpecialTeams: 2,
-    baseAccuracy: 0.95,
-    distancePenalty: 0.55, // accuracy lost at the very edge of range
-    accuracyPerSpecialTeams: 0.01,
-    attemptFromYardLine: 50, // only bother once past midfield
-  },
-
-  scoring: {
-    touchdown: 7,
-    fieldGoal: 3,
-  },
-
+  /**
+   * Every team has one identity. All of them are bonuses — none of them
+   * carry a downside, because nothing in this game punishes you.
+   * `perLevel` is how much the specialty upgrade adds to that team's stat.
+   */
   playbooks: {
     balanced: {
-      weights: { run: 0.6, shortPass: 0.32, deepPass: 0.08 },
-      runYardScale: 1,
-      allYardScale: 1,
-      intScale: 1,
-      explosiveScale: 1,
-      intervalScale: 1,
-      conversionBonus: 0,
-      deepDisabled: false,
-      deepWeightScale: 1,
+      label: 'All-Rounder',
+      specialtyName: 'TEAMWORK',
+      blurb: 'A little bit better at everything.',
+      speed: 1.1,
+      touchdownBonus: 1.1,
+      bigPlay: 1.1,
+      yards: 1,
+      perLevel: { speed: 0.05, touchdownBonus: 0.05, bigPlay: 0.05, yards: 0 },
     },
     groundAndPound: {
-      weights: { run: 0.6, shortPass: 0.32, deepPass: 0.08 },
-      runYardScale: 1.3,
-      allYardScale: 1,
-      intScale: 1,
-      explosiveScale: 1,
-      intervalScale: 1,
-      conversionBonus: 0.1,
-      deepDisabled: true,
-      deepWeightScale: 1,
+      label: 'Bulldozer',
+      specialtyName: 'POWER RUN',
+      blurb: 'Huge touchdown bonuses.',
+      speed: 1,
+      touchdownBonus: 1.6,
+      bigPlay: 1,
+      yards: 1,
+      perLevel: { speed: 0, touchdownBonus: 0.3, bigPlay: 0, yards: 0 },
     },
     airRaid: {
-      weights: { run: 0.6, shortPass: 0.32, deepPass: 0.08 },
-      runYardScale: 1,
-      allYardScale: 1,
-      intScale: 2,
-      explosiveScale: 2,
-      intervalScale: 1,
-      conversionBonus: 0,
-      deepDisabled: false,
-      deepWeightScale: 2,
+      label: 'Bomb Squad',
+      specialtyName: 'DEEP SHOT',
+      blurb: 'Big plays happen way more often.',
+      speed: 1,
+      touchdownBonus: 1,
+      bigPlay: 2.5,
+      yards: 1,
+      perLevel: { speed: 0, touchdownBonus: 0, bigPlay: 0.6, yards: 0 },
     },
     hurryUp: {
-      weights: { run: 0.6, shortPass: 0.32, deepPass: 0.08 },
-      runYardScale: 1,
-      allYardScale: 0.8,
-      intScale: 1,
-      explosiveScale: 1,
-      intervalScale: 0.5,
-      conversionBonus: 0,
-      deepDisabled: false,
-      deepWeightScale: 1,
+      label: 'Speedster',
+      specialtyName: 'TEMPO',
+      blurb: 'Runs down the field faster.',
+      speed: 1.3,
+      touchdownBonus: 1,
+      bigPlay: 1,
+      yards: 1,
+      perLevel: { speed: 0.12, touchdownBonus: 0, bigPlay: 0, yards: 0 },
     },
     defensive: {
-      weights: { run: 0.6, shortPass: 0.32, deepPass: 0.08 },
-      runYardScale: 1,
-      allYardScale: 1,
-      intScale: 1,
-      explosiveScale: 1,
-      intervalScale: 1,
-      conversionBonus: 0,
-      deepDisabled: false,
-      deepWeightScale: 1,
+      label: 'Ball Hawk',
+      specialtyName: 'TAKEAWAY',
+      blurb: 'Banks extra yards from every play.',
+      speed: 1,
+      touchdownBonus: 1,
+      bigPlay: 1,
+      yards: 1.3,
+      perLevel: { speed: 0, touchdownBonus: 0, bigPlay: 0, yards: 0.12 },
     },
   },
 
-  // Points-per-minute readout is an exponential moving average so it settles
-  // instead of jittering with every touchdown.
-  rate: { halfLifeMs: 180_000 },
+  /** Buying the next team. Cost climbs with how many you already own. */
+  unlock: {
+    baseCost: 500,
+    growth: 1.55,
+  },
 
-  ui: { flashDurationMs: 900 },
+  /** Yards-per-minute readout is smoothed so it does not jitter. */
+  rate: { halfLifeMs: 20_000 },
 
-  tick: { maxPlaysPerTeamPerTick: 20_000 },
+  ui: {
+    flashDurationMs: 1100,
+    logLength: 6,
+  },
+
+  offline: { maxHours: 4 },
+
+  /** Guard rail so a giant dt cannot lock the loop up. */
+  tick: { maxSecondsPerStep: 4 * 60 * 60 },
 } as const;

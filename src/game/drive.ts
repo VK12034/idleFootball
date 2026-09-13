@@ -1,177 +1,92 @@
 import { BALANCE } from '../config/balance';
-import { PLAY_LABEL, runPlay, type Rng } from './play';
 import type { Mods } from './ratings';
-import type { DriveState, FlashKind, PlayResult } from './types';
+import type { EventKind, Team } from './types';
 
-export interface DriveOutcome {
-  drive: DriveState;
-  result: PlayResult;
-  points: number;
+export type Rng = () => number;
+
+export interface DriveEvent {
+  kind: EventKind;
   text: string;
-  flash: FlashKind;
-  /** A set of downs ended this snap (converted or not) — used for conversion rate. */
-  setEnded: boolean;
-  setConverted: boolean;
-  driveEnded: boolean;
 }
 
-export function freshDrive(): DriveState {
-  return {
-    yardLine: BALANCE.drive.startYardLine,
-    down: 1,
-    yardsToFirst: BALANCE.drive.firstDownDistance,
-  };
-}
-
-function fgDistance(yardLine: number) {
-  return Math.round(BALANCE.drive.goalLine - yardLine + BALANCE.fieldGoal.endZoneAndSnap);
-}
-
-/** Returns [made, distance, inRange]. */
-function attemptFieldGoal(mods: Mods, yardLine: number, rng: Rng) {
-  const fg = BALANCE.fieldGoal;
-  const distance = fgDistance(yardLine);
-  if (distance > mods.fgRange) return { made: false, distance, inRange: false };
-  const accuracy = Math.min(
-    0.99,
-    fg.baseAccuracy - (distance / mods.fgRange) * fg.distancePenalty + mods.fgAccuracyBonus,
-  );
-  return { made: rng() < accuracy, distance, inRange: true };
+export interface AdvanceResult {
+  /** Yards to add to the bank, already multiplied. */
+  yardsBanked: number;
+  touchdowns: number;
+  bigPlays: number;
+  events: DriveEvent[];
 }
 
 /**
- * Runs one snap and folds it into the drive: downs, first downs, scoring,
- * turnovers, and the consolation field goal when a drive dies past midfield.
+ * Moves a team forward by dt seconds. Progress only ever increases, so there
+ * is no failure case to handle: no downs, no turnovers, no losses.
+ *
+ * Safe to call with a very large dt (offline catch-up).
  */
-export function advanceDrive(
-  drive: DriveState,
+export function advanceTeam(
+  team: Team,
   mods: Mods,
-  payoutMultiplier: number,
+  dtSeconds: number,
   rng: Rng = Math.random,
-): DriveOutcome {
-  const { goalLine } = BALANCE.drive;
-  const result = runPlay(mods, rng);
-
-  // Late-down conversion: film study / running backs willing the ball forward.
-  if (
-    result.outcome !== 'fumble' &&
-    result.outcome !== 'interception' &&
-    drive.down >= 3 &&
-    result.yards < drive.yardsToFirst &&
-    rng() < mods.conversionChance
-  ) {
-    result.yards = drive.yardsToFirst;
-    result.outcome = 'gain';
-    result.converted = true;
+): AdvanceResult {
+  const events: DriveEvent[] = [];
+  if (dtSeconds <= 0) {
+    return { yardsBanked: 0, touchdowns: 0, bigPlays: 0, events };
   }
 
-  const label = PLAY_LABEL[result.type];
+  // --- steady forward progress ---
+  let rawYards = mods.yardsPerSecond * dtSeconds;
 
-  // --- turnovers end the drive immediately ---
-  if (result.outcome === 'fumble' || result.outcome === 'interception') {
-    return {
-      drive: freshDrive(),
-      result,
-      points: 0,
-      text: result.outcome === 'fumble' ? 'FUMBLE LOST' : 'INTERCEPTED',
-      flash: 'turnover',
-      setEnded: true,
-      setConverted: false,
-      driveEnded: true,
-    };
-  }
+  // --- big plays, rolled once per whole second ---
+  team.rollTimer += dtSeconds;
+  const rolls = Math.floor(team.rollTimer);
+  team.rollTimer -= rolls;
 
-  const yardLine = drive.yardLine + result.yards;
-
-  // --- touchdown ---
-  if (yardLine >= goalLine) {
-    return {
-      drive: freshDrive(),
-      result,
-      points: BALANCE.scoring.touchdown * payoutMultiplier,
-      text: `${label}, ${result.yards} yd — TOUCHDOWN`,
-      flash: 'touchdown',
-      setEnded: true,
-      setConverted: true,
-      driveEnded: true,
-    };
-  }
-
-  const gainText =
-    result.outcome === 'incompletion'
-      ? `${label} incomplete`
-      : `${label}, +${result.yards}${result.explosive ? ' EXPLOSIVE' : ''}`;
-
-  // --- first down ---
-  if (result.yards >= drive.yardsToFirst) {
-    const toGoal = goalLine - yardLine;
-    return {
-      drive: {
-        yardLine,
-        down: 1,
-        yardsToFirst: Math.min(BALANCE.drive.firstDownDistance, toGoal),
-      },
-      result,
-      points: 0,
-      text: `${gainText} — ${result.converted ? 'CONVERTED' : 'FIRST DOWN'}`,
-      flash: 'firstDown',
-      setEnded: true,
-      setConverted: true,
-      driveEnded: false,
-    };
-  }
-
-  const remaining = drive.yardsToFirst - result.yards;
-
-  // --- still alive ---
-  if (drive.down < 4) {
-    return {
-      drive: { yardLine, down: drive.down + 1, yardsToFirst: remaining },
-      result,
-      points: 0,
-      text: gainText,
-      flash: 'none',
-      setEnded: false,
-      setConverted: false,
-      driveEnded: false,
-    };
-  }
-
-  // --- 4th down failed: field goal if we got past midfield ---
-  if (yardLine > BALANCE.fieldGoal.attemptFromYardLine) {
-    const fg = attemptFieldGoal(mods, yardLine, rng);
-    if (fg.made) {
-      return {
-        drive: freshDrive(),
-        result,
-        points: BALANCE.scoring.fieldGoal * payoutMultiplier,
-        text: `${fg.distance} yd FIELD GOAL — GOOD`,
-        flash: 'fieldGoal',
-        setEnded: true,
-        setConverted: false,
-        driveEnded: true,
-      };
+  let bigPlays = 0;
+  if (rolls > 0 && mods.bigPlayChance > 0) {
+    if (rolls <= 32) {
+      // Normal play: roll each second so streaks feel real.
+      for (let i = 0; i < rolls; i++) if (rng() < mods.bigPlayChance) bigPlays++;
+    } else {
+      // Offline catch-up: take the expected count instead of looping for hours.
+      const expected = rolls * mods.bigPlayChance;
+      bigPlays = Math.floor(expected) + (rng() < expected % 1 ? 1 : 0);
     }
-    return {
-      drive: freshDrive(),
-      result,
-      points: 0,
-      text: `${fg.distance} yd FG — ${fg.inRange ? 'MISSED' : 'NO RANGE'}`,
-      flash: 'stop',
-      setEnded: true,
-      setConverted: false,
-      driveEnded: true,
-    };
+  }
+  if (bigPlays > 0) {
+    rawYards += bigPlays * mods.bigPlayYards;
+    team.bigPlays += bigPlays;
+    team.bigPlayAt = -1; // tick stamps the real time
+    events.push({
+      kind: 'bigPlay',
+      text:
+        bigPlays === 1
+          ? `BIG PLAY! +${Math.round(mods.bigPlayYards)}`
+          : `${bigPlays} BIG PLAYS! +${Math.round(bigPlays * mods.bigPlayYards)}`,
+    });
   }
 
-  return {
-    drive: freshDrive(),
-    result,
-    points: 0,
-    text: `${gainText} — TURNOVER ON DOWNS`,
-    flash: 'stop',
-    setEnded: true,
-    setConverted: false,
-    driveEnded: true,
-  };
+  // --- touchdowns ---
+  const advanced = team.progress + rawYards;
+  const touchdowns = Math.floor(advanced / BALANCE.field.length);
+  team.progress = advanced % BALANCE.field.length;
+
+  let bonus = 0;
+  if (touchdowns > 0) {
+    bonus = touchdowns * mods.touchdownBonus;
+    team.touchdowns += touchdowns;
+    team.touchdownAt = -1; // tick stamps the real time
+    events.push({
+      kind: 'touchdown',
+      text:
+        touchdowns === 1
+          ? `TOUCHDOWN! +${Math.round(mods.touchdownBonus)}`
+          : `${touchdowns} TOUCHDOWNS! +${Math.round(bonus)}`,
+    });
+  }
+
+  const yardsBanked = (rawYards + bonus) * mods.yardMultiplier;
+  team.yardsGained += yardsBanked;
+
+  return { yardsBanked, touchdowns, bigPlays, events };
 }

@@ -2,13 +2,129 @@
 @tailwind components;
 @tailwind utilities;
 
-html,
-body,
-#root {
-  height: 100%;
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-ink text-chalk;
+    font-family: VT323, ui-monospace, monospace;
+    font-size: 19px;
+    line-height: 1.25;
+    -webkit-font-smoothing: none;
+    image-rendering: pixelated;
+    /* phone hygiene: no sideways scroll, no iOS autoscaling, no tap highlight */
+    overflow-x: hidden;
+    overscroll-behavior-y: none;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    background-image:
+      radial-gradient(circle at 50% -15%, #7d6dff 0%, #4b3ec8 35%, #31258f 70%, #241a70 100%),
+      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.05) 0 2px, transparent 2px 4px);
+    background-attachment: fixed;
+  }
+
+  /* keep the chunky look: nothing gets soft edges */
+  * {
+    image-rendering: pixelated;
+  }
+
+  button {
+    /* Inherit the readable body font. Only .px-btn / .led opt into the wide
+       pixel display face — applying it to every button made body copy inside
+       buttons three times too wide and forced truncation. */
+    font: inherit;
+    color: inherit;
+    /* kill the 300ms tap delay and double-tap zoom on buttons */
+    touch-action: manipulation;
+  }
+
+  /* Tapping fast on upgrade buttons should never start a text selection. */
+  .no-select {
+    -webkit-user-select: none;
+    user-select: none;
+  }
 }
 
-body {
-  @apply bg-neutral-950 text-neutral-100 antialiased;
-  font-feature-settings: 'tnum' 1;
+@layer components {
+  /* A chunky panel with a hard drop shadow, no rounded corners. */
+  .px-panel {
+    @apply relative border-[3px] border-ink bg-night;
+    box-shadow:
+      0 5px 0 0 #120a38,
+      inset 3px 3px 0 0 rgba(255, 255, 255, 0.22),
+      inset -3px -3px 0 0 rgba(0, 0, 0, 0.28);
+  }
+
+  .px-inset {
+    @apply border-[3px] border-ink bg-deep;
+    box-shadow: inset 3px 3px 0 0 rgba(0, 0, 0, 0.32);
+  }
+
+  .px-btn {
+    @apply relative border-[3px] border-ink bg-dusk px-3 py-2 text-[10px] uppercase tracking-wider text-chalk;
+    font-family: 'Press Start 2P', ui-monospace, monospace;
+    /* comfortable thumb target on a phone */
+    min-height: 44px;
+    box-shadow:
+      0 4px 0 0 #120a38,
+      inset 2px 2px 0 0 rgba(255, 255, 255, 0.28);
+    transition: none;
+  }
+  .px-btn:hover {
+    @apply bg-[#7a70ff];
+  }
+  .px-btn:active {
+    transform: translateY(4px);
+    box-shadow: inset 2px 2px 0 0 rgba(0, 0, 0, 0.3);
+  }
+
+  .px-btn-amber {
+    @apply bg-amber text-ink;
+  }
+  .px-btn-amber:hover {
+    @apply bg-[#ffd268];
+  }
+
+  /* LED scoreboard digits */
+  .led {
+    font-family: 'Press Start 2P', ui-monospace, monospace;
+    letter-spacing: 0.04em;
+  }
+
+  .label {
+    font-family: 'Press Start 2P', ui-monospace, monospace;
+    @apply text-[8px] uppercase tracking-[0.16em] text-[#bcb2ff];
+  }
+
+  /* the tutorial spotlight: pulse the ring only, never the content */
+  .tut-glow {
+    outline: 3px solid #ffc23c;
+    outline-offset: 3px;
+    animation: ringpulse 800ms steps(1, end) infinite;
+  }
+
+  @keyframes ringpulse {
+    0%,
+    49% {
+      outline-color: #ffc23c;
+    }
+    50%,
+    100% {
+      outline-color: #6d4a0e;
+    }
+  }
+
+  .scanlines::after {
+    content: '';
+    @apply pointer-events-none absolute inset-0;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.16) 0 2px,
+      transparent 2px 4px
+    );
+  }
 }
