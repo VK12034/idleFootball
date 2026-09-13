@@ -1,0 +1,1 @@
+{"root":["./src/main.tsx","./src/config/balance.ts","./src/game/drive.ts","./src/game/generate.ts","./src/game/play.ts","./src/game/ratings.ts","./src/game/tick.ts","./src/game/types.ts","./src/ui/app.tsx","./src/ui/fieldbar.tsx","./src/ui/header.tsx","./src/ui/teamcard.tsx"],"version":"5.9.3"}
